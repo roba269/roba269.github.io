@@ -1,3 +1,4 @@
 auto: true
 paginate: 10
+markdown: rdiscount
 author_info: Liang He
