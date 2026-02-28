@@ -1,5 +1,7 @@
 ---
 title: "A study on CUDA async memcpy"
+description: >-
+  A study on CUDA async exeuctions, including PTX and C++ barrier/pipeline abstractions
 date: 2026-02-27
 categories: [CUDA]
 tags: [CUDA, Performance]
