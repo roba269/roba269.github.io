@@ -59,7 +59,7 @@ webmaster_verifications:
 # Web Analytics Settings
 analytics:
   google:
-    id: # fill in your Google Analytics ID
+    id: 16462912 # fill in your Google Analytics ID
   goatcounter:
     id: # fill in your GoatCounter ID
   umami:
@@ -120,9 +120,9 @@ comments:
   # Giscus options › https://giscus.app
   giscus:
     repo: roba269/roba269.github.io # <gh-username>/<repo>
-    repo_id:
-    category:
-    category_id:
+    repo_id: R_kgDOQzsI0Q
+    category: Announcements
+    category_id: DIC_kwDOQzsI0c4C3amA
     mapping: # optional, default to 'pathname'
     strict: # optional, default to '0'
     input_position: # optional, default to 'bottom'
