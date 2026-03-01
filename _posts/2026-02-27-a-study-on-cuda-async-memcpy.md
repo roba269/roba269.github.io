@@ -158,9 +158,29 @@ __global__ void split_arrive_wait(int iteration_count, float *data)
 }
 ```
 
-As we can see, we use `thread_scope_block`, and the barrier is located in shared memory. In thread 0, we init the barrier with thread block size as pending arrival count. In the for loop, we have `compute()` between the `bar.arrive()` and `bar.wait()`. The benefit is that if the load is not very balanced, the threads reach bar.arrive() earlier can do the unrelated `compute()` without waiting for other slower threads. 
+As we can see, we use `thread_scope_block`, and the barrier is located in shared memory. In thread 0, we init the barrier with thread block size as pending arrival count. In the for loop, we have `compute()` between the `bar.arrive()` and `bar.wait()`. The benefit is that if the load is not very balanced, the threads reach `bar.arrive()` earlier can do the unrelated `compute()` without waiting for other slower threads. 
 
-Apparently, for the `/* code before arrive */` part, the most typical operation is async copy from gmem to smem. We can see there are many overloads for the [`cuda::memcpy_async`](https://nvidia.github.io/cccl/unstable/libcudacxx/extended_api/asynchronous_operations/memcpy_async.html#libcudacxx-extended-api-asynchronous-operations-memcpy-async) The first two are about barriers. As you can see we need pass in a barrier object as the last parameter. Inside the function, it will be translated to the `cp.async.mbarrier.arrive` ptx (see above section), to hook this memcpy with the barrier.
+Apparently, for the `/* code before arrive */` part, the most typical operation is async copy from gmem to smem. We can see there are many overloads for the [`cuda::memcpy_async`](https://nvidia.github.io/cccl/unstable/libcudacxx/extended_api/asynchronous_operations/memcpy_async.html#libcudacxx-extended-api-asynchronous-operations-memcpy-async). The first two are about barriers:
+
+```cpp
+#include <cuda/barrier>
+
+// (1)
+template <typename Shape, cuda::thread_scope Scope, typename CompletionFunction>
+__host__ __device__
+void cuda::memcpy_async(void* destination, void const* source, Shape size,
+                        cuda::barrier<Scope, CompletionFunction>& barrier);
+
+// (2)
+template <typename Group,
+          typename Shape, cuda::thread_scope Scope, typename CompletionFunction>
+__host__ __device__
+void cuda::memcpy_async(Group const& group,
+                        void* destination, void const* source, Shape size,
+                        cuda::barrier<Scope, CompletionFunction>& barrier);
+```
+
+ As we can see we need pass in a barrier object as the last parameter. Inside the function, it will be translated to the `cp.async.mbarrier.arrive` ptx (see above section), to hook this memcpy with the barrier.
 
 ### cuda::pipeline
 
@@ -183,7 +203,7 @@ constexpr auto scope = cuda::thread_scope_thread;
 cuda::pipeline<scope> pipeline = cuda::make_pipeline();
 ```
 
-See this example for [thread-scoped pipeline example](https://github.com/roba269/gpu-learning/blob/main/async_study/test_pipeline_thread_scope.cu), and the corresponding [PTX](https://github.com/roba269/gpu-learning/blob/main/async_study/test_pipeline_thread_scope.ptx). As we can see the ptx is based on commit_group / wait_group approach.
+See this example for [thread-scoped pipeline example](https://github.com/roba269/gpu-learning/blob/main/async_study/test_pipeline_thread_scope.cu), and the corresponding [PTX](https://github.com/roba269/gpu-learning/blob/main/async_study/test_pipeline_thread_scope.ptx). (Compiled with `-arch=sm_89`) As we can see the ptx is based on commit_group / wait_group approach.
 
 If your kernel doesn’t need cross-thread data sharing, thread-scoped pipeline could be a good choice. Unfortunately I feel like most of the realistic work in this GenAI era (like GEMM, Attention) do need cross-thread data sharing.
 
@@ -243,13 +263,33 @@ public:
 
 (Note: Just for illustrating the idea. I did’t really test it, not even sure if it compile!) 
 
-And see this example for [thread-scoped pipeline](https://github.com/roba269/gpu-learning/blob/main/async_study/test_pipeline_block_scope.cu) and the corresponding [PTX](https://github.com/roba269/gpu-learning/blob/main/async_study/test_pipeline_block_scope.ptx) As we can see the PTX is based on mbarrier approach.
+Similar as `cuda::barrier`, we usually need to hook the memcpy with `cuda::pipeline`, using these two overloads:
+
+```cpp
+#include <cuda/pipeline>
+
+// (3)
+template <typename Shape, cuda::thread_scope Scope>
+__host__ __device__
+void cuda::memcpy_async(void* destination, void const* source, Shape size,
+                        cuda::pipeline<Scope>& pipeline);
+
+// (4)
+template <typename Group, typename Shape, cuda::thread_scope Scope>
+__host__ __device__
+void cuda::memcpy_async(Group const& group,
+                        void* destination, void const* source, Shape size,
+                        cuda::pipeline<Scope>& pipeline);
+
+```
+
+And see this example for [thread-scoped pipeline](https://github.com/roba269/gpu-learning/blob/main/async_study/test_pipeline_block_scope.cu) and the corresponding [PTX](https://github.com/roba269/gpu-learning/blob/main/async_study/test_pipeline_block_scope.ptx) (Compiled with `-arch=sm_89`) As we can see the PTX is based on mbarrier approach.
 
 ## “Real world” example
 
 Finally let’s make a relative more realistic example. This is a strange shaped matrix multiplication with M = N = 32 and relatively large K. We only launch 1 thread block which contains 32 thread (i.e. 1 warp), to amplify the result of async memcpy. We iterate along the K, each of the (K/32) iteration compute a 32 * 32 subtile from A with a 32 * 32 subtile from B, and accumulate the results.
 
-We compare the vanilla implementation with the double-buffer implementation. For the double-buffer implementation, the idea is that we create two buffers (some one called pingpong?) for the subtile, while the current subtile is being computed, we asynchronously copy the next subtile from global memory. We use 2-stage thread-scoped cuda::pipeline to implement it.
+We compare the vanilla implementation with the double-buffer implementation. For the double-buffer implementation, the idea is that we create two buffers (some one called pingpong?) for the subtile, while the current subtile is being computed, we asynchronously copy the next subtile from global memory. We use 2-stage thread-scoped `cuda::pipeline` to implement it.
 
 ```cpp
 // baseline implemenation
