@@ -1,0 +1,719 @@
+---
+layout: page
+title: "CuTe Layout Visualizer"
+permalink: /cute-layout/
+icon: fas fa-table
+order: 4
+---
+
+<!--
+  CuTe Layout Visualizer
+  Renders a CuTe Layout as a 2-D color grid, matching the output of print_latex().
+  Supports flat and hierarchical (nested) modes, e.g. ((2,4),(2,2)):((1,8),(16,32)).
+  Dashed / solid separator lines show nested-mode tile boundaries.
+  Slice coordinates highlight a sub-tensor; unmatched cells are dimmed.
+
+  Usage in Jekyll blog:
+    1. Copy this file to your Jekyll site root (or _pages/).
+    2. Adjust the front-matter "layout" key to match your theme.
+    3. The permalink /cute-layout/ can be changed freely.
+-->
+
+<style>
+/* ── Scope every rule to .clv-wrap to avoid theme collisions ── */
+.clv-wrap {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  max-width: 960px;
+}
+.clv-wrap p.clv-desc {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 0.93rem;
+  color: #555;
+  margin: 0 0 1.1rem;
+  line-height: 1.6;
+}
+.clv-wrap p.clv-desc code {
+  font-family: monospace;
+  background: #f0f0f0;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+
+/* ── Input rows ────────────────────────────────────────────── */
+.clv-input-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.clv-field { display: flex; flex-direction: column; gap: 4px; }
+.clv-field label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #777;
+}
+.clv-field input {
+  font-family: monospace;
+  font-size: 1rem;
+  padding: 5px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  width: 320px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.clv-field input:focus {
+  border-color: #4a90d9;
+  box-shadow: 0 0 0 2px rgba(74,144,217,0.2);
+}
+.clv-field input.clv-slice-input { width: 280px; }
+
+/* Buttons */
+.clv-btn-primary {
+  padding: 6px 18px;
+  background: #2c7bb6;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-family: monospace;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.clv-btn-primary:hover { background: #1f5c8e; }
+
+.clv-btn-ghost {
+  padding: 6px 12px;
+  background: transparent;
+  color: #888;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-family: monospace;
+  transition: background 0.12s, color 0.12s;
+  white-space: nowrap;
+}
+.clv-btn-ghost:hover { background: #f0f0f0; color: #555; }
+
+/* ── Presets ──────────────────────────────────────────────── */
+.clv-presets {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.clv-presets > span {
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  color: #888;
+  font-size: 0.78rem;
+}
+.clv-preset-btn {
+  padding: 3px 8px;
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: monospace;
+  font-size: 0.75rem;
+  transition: background 0.12s;
+  white-space: nowrap;
+}
+.clv-preset-btn:hover  { background: #e4e4e4; border-color: #bbb; }
+.clv-preset-btn.active { background: #d8eaf8; border-color: #4a90d9; color: #1a5c8e; }
+
+/* ── Banners ──────────────────────────────────────────────── */
+.clv-info {
+  font-size: 0.88rem;
+  padding: 7px 13px;
+  margin-bottom: 14px;
+  border-left: 3px solid #4a90d9;
+  background: #f5faff;
+  border-radius: 0 4px 4px 0;
+  display: none;
+}
+.clv-info code {
+  background: #ddeeff;
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: #0a4d8c;
+}
+.clv-error {
+  font-size: 0.88rem;
+  padding: 7px 13px;
+  margin-bottom: 14px;
+  border-left: 3px solid #c0392b;
+  background: #fff5f5;
+  color: #c0392b;
+  border-radius: 0 4px 4px 0;
+  display: none;
+}
+.clv-slice-err {
+  font-size: 0.82rem;
+  padding: 5px 10px;
+  margin-bottom: 10px;
+  border-left: 3px solid #e67e22;
+  background: #fff8f0;
+  color: #b35900;
+  border-radius: 0 4px 4px 0;
+  display: none;
+}
+
+/* ── Grid ─────────────────────────────────────────────────── */
+.clv-grid-wrap { overflow-x: auto; }
+
+table.clv-grid {
+  border-collapse: collapse;
+  margin-top: 2px;
+  table-layout: fixed;
+}
+/* Adaptive cell sizes */
+table.clv-grid.clv-sz-sm td,
+table.clv-grid.clv-sz-sm th { width: 44px; height: 44px; font-size: 0.82rem; }
+table.clv-grid.clv-sz-md td,
+table.clv-grid.clv-sz-md th { width: 36px; height: 36px; font-size: 0.76rem; }
+table.clv-grid.clv-sz-lg td,
+table.clv-grid.clv-sz-lg th { width: 28px; height: 28px; font-size: 0.68rem; }
+table.clv-grid.clv-sz-xl td,
+table.clv-grid.clv-sz-xl th { width: 22px; height: 22px; font-size: 0.60rem; }
+
+table.clv-grid td,
+table.clv-grid th {
+  text-align: center;
+  vertical-align: middle;
+  padding: 0;
+  box-sizing: border-box;
+}
+table.clv-grid th          { border: none; background: transparent; color: #999; font-weight: 600; }
+table.clv-grid td          { border: 1px solid #999; }
+table.clv-grid .clv-corner { border: none !important; background: none !important; }
+
+/* ── Slice highlighting ───────────────────────────────────── */
+/* Cells that match the slice: bright inset border               */
+table.clv-grid td.clv-hi {
+  box-shadow: inset 0 0 0 3px rgba(44, 123, 182, 0.95);
+  z-index: 1;
+  position: relative;
+}
+/* Cells outside the slice: heavily dimmed                       */
+table.clv-grid td.clv-dim { opacity: 0.15; }
+
+/* Row / col headers adjacent to a matched row or col            */
+table.clv-grid th.clv-hi-hdr { color: #2c7bb6; font-weight: 800; }
+
+/* ── Legend ───────────────────────────────────────────────── */
+.clv-legend {
+  display: none;
+  margin-top: 10px;
+  font-size: 0.78rem;
+  color: #666;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.clv-legend-item { display: flex; align-items: center; gap: 5px; }
+.clv-legend-line {
+  display: inline-block;
+  width: 28px;
+  height: 0;
+  border: none;
+}
+</style>
+
+<div class="clv-wrap">
+  <p class="clv-desc">
+    A CuTe <strong>Layout</strong> maps logical coordinates to a linear memory index.
+    Enter a layout in CuTe notation — <code>shape:stride</code> — where each part can be
+    a scalar (<code>8</code>), a flat tuple (<code>(8,4)</code>), or a nested tuple
+    (<code>((2,4),(2,2))</code>).Dashed / solid lines show nested tile boundaries.
+    Use the <strong>Slice</strong> field to highlight a sub-tensor: <code>_</code> means
+    all values, an integer selects one coordinate, nested tuples work too.
+  </p>
+
+  <!-- Layout input -->
+  <div class="clv-input-row">
+    <div class="clv-field">
+      <label for="clv-layout">Layout &nbsp;<span style="font-weight:400;text-transform:none;letter-spacing:0">(shape:stride)</span></label>
+      <input id="clv-layout" type="text"
+             placeholder="e.g. ((2,4),(2,2)):((1,8),(16,32))"
+             value="(8,4):(1,8)" />
+    </div>
+    <button class="clv-btn-primary" onclick="clvRender()">Visualize</button>
+  </div>
+
+  <!-- Slice input -->
+  <div class="clv-input-row">
+    <div class="clv-field">
+      <label for="clv-slice">Slice coord &nbsp;<span style="font-weight:400;text-transform:none;letter-spacing:0">_ = all &nbsp;|&nbsp; integer = fix &nbsp;|&nbsp; e.g. (_,2) &nbsp;(3,_) &nbsp;((_,1),_)</span></label>
+      <input id="clv-slice" type="text" class="clv-slice-input"
+             placeholder="leave blank for no slice" />
+    </div>
+    <button class="clv-btn-ghost" onclick="clvClearSlice()">✕ Clear</button>
+  </div>
+
+  <div class="clv-presets">
+    <span>Presets:</span>
+    <button class="clv-preset-btn" onclick="clvSet('(8,4):(1,8)',this)">col-major 8×4</button>
+    <button class="clv-preset-btn" onclick="clvSet('(8,4):(4,1)',this)">row-major 8×4</button>
+    <button class="clv-preset-btn" onclick="clvSet('((2,4),(2,2)):((1,8),(16,32))',this)">nested ((2,4),(2,2))</button>
+    <button class="clv-preset-btn" onclick="clvSet('((4,2),(4,2)):((1,16),(32,4))',this)">nested ((4,2),(4,2))</button>
+    <button class="clv-preset-btn" onclick="clvSet('((2,2,2),(2,2)):((1,4,8),(2,32))',this)">nested 3-deep rows</button>
+    <button class="clv-preset-btn" onclick="clvSet('8:1',this)">1-D  8:1</button>
+    <button class="clv-preset-btn" onclick="clvSet('(4,2):(1,4)',this)">1-D tiled (4,2)</button>
+    <button class="clv-preset-btn" onclick="clvSet('(4,4):(1,0)',this)">broadcast cols</button>
+    <button class="clv-preset-btn" onclick="clvSet('(4,4):(0,1)',this)">broadcast rows</button>
+  </div>
+
+  <div id="clv-info"      class="clv-info"></div>
+  <div id="clv-error"     class="clv-error"></div>
+  <div id="clv-slice-err" class="clv-slice-err"></div>
+  <div class="clv-grid-wrap">
+    <table id="clv-grid" class="clv-grid"></table>
+  </div>
+  <div id="clv-legend" class="clv-legend">
+    <span>Tile boundaries:</span>
+    <span class="clv-legend-item">
+      <span class="clv-legend-line" style="border-top:2px dashed #888"></span> inner mode
+    </span>
+    <span class="clv-legend-item">
+      <span class="clv-legend-line" style="border-top:2px solid #555"></span> outer mode
+    </span>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ── Color scheme: TikzColor_BWx8 ──────────────────────────────────────
+     black!{0,40,20,60,10,50,30,70}  →  hex equivalents                  */
+  var BG = ['#ffffff','#999999','#cccccc','#666666','#e6e6e6','#808080','#b3b3b3','#4d4d4d'];
+  var FG = ['#000',   '#000',   '#000',   '#fff',   '#000',   '#000',   '#000',   '#fff'  ];
+
+  /* ── Separator border styles (level 0 = finest/dashed, higher = thicker) */
+  var SEP = [
+    '2px dashed #888',
+    '2px solid  #555',
+    '3px solid  #333'
+  ];
+  function sepStyle(level) { return SEP[Math.min(level, SEP.length - 1)]; }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     PARSER  –  "(shape):(stride)" with arbitrary nesting
+     ══════════════════════════════════════════════════════════════════════ */
+
+  function splitCommas(str) {
+    var parts = [], depth = 0, start = 0;
+    for (var i = 0; i < str.length; i++) {
+      if      (str[i] === '(') depth++;
+      else if (str[i] === ')') depth--;
+      else if (str[i] === ',' && depth === 0) {
+        parts.push(str.substring(start, i).trim());
+        start = i + 1;
+      }
+    }
+    parts.push(str.substring(start).trim());
+    return parts.filter(function (s) { return s.length > 0; });
+  }
+
+  // Parse integers / nested tuples (for shape & stride – no wildcards)
+  function parseTuple(str) {
+    str = str.trim();
+    if (!str) throw new Error('empty value');
+    if (str[0] === '(') {
+      if (str[str.length - 1] !== ')') throw new Error('unmatched "(" in: ' + str);
+      var inner = str.slice(1, -1).trim();
+      if (!inner) throw new Error('empty tuple');
+      return splitCommas(inner).map(parseTuple);
+    }
+    var v = parseInt(str, 10);
+    if (isNaN(v)) throw new Error('not an integer: "' + str + '"');
+    return v;
+  }
+
+  // Parse a coordinate: integer, "_" wildcard, or nested tuple of coords
+  function parseCoord(str) {
+    str = str.trim();
+    if (!str || str === '_') return '_';
+    if (str[0] === '(') {
+      if (str[str.length - 1] !== ')') throw new Error('unmatched "(" in coord: ' + str);
+      var inner = str.slice(1, -1).trim();
+      if (!inner) return '_';
+      return splitCommas(inner).map(parseCoord);
+    }
+    var v = parseInt(str, 10);
+    if (isNaN(v)) throw new Error('expected integer or "_" but got: "' + str + '"');
+    return v;
+  }
+
+  // Parse layout string "shape:stride"
+  function parseLayout(str) {
+    str = str.trim();
+    var depth = 0, colon = -1;
+    for (var i = 0; i < str.length; i++) {
+      if      (str[i] === '(') depth++;
+      else if (str[i] === ')') depth--;
+      else if (str[i] === ':' && depth === 0) { colon = i; break; }
+    }
+    if (colon < 0) throw new Error('missing ":" between shape and stride');
+    var s = str.substring(0, colon).trim();
+    var d = str.substring(colon + 1).trim();
+    if (!s) throw new Error('shape is empty');
+    if (!d) throw new Error('stride is empty');
+    return { shape: parseTuple(s), stride: parseTuple(d) };
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     ALGEBRA
+     ══════════════════════════════════════════════════════════════════════ */
+
+  function product(s) {
+    if (!Array.isArray(s)) return s;
+    return s.reduce(function (a, x) { return a * product(x); }, 1);
+  }
+
+  function sameTree(shape, stride) {
+    var sa = Array.isArray(shape), da = Array.isArray(stride);
+    if (sa !== da) return false;
+    if (!sa) return true;
+    if (shape.length !== stride.length) return false;
+    for (var i = 0; i < shape.length; i++)
+      if (!sameTree(shape[i], stride[i])) return false;
+    return true;
+  }
+
+  function shapesPositive(s) {
+    if (!Array.isArray(s)) return s >= 1;
+    return s.every(shapesPositive);
+  }
+
+  // Map flat coordinate `coord` in mode (shape,stride) to its index contribution
+  function modeIdx(coord, shape, stride) {
+    if (!Array.isArray(shape)) return coord * stride;
+    var idx = 0, rem = coord;
+    for (var i = 0; i < shape.length; i++) {
+      var sz = product(shape[i]);
+      idx += modeIdx(rem % sz, shape[i], stride[i]);
+      rem  = Math.floor(rem / sz);
+    }
+    return idx;
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     SLICE MATCHING
+     coord can be: '_' (wildcard), integer (exact flat match),
+     or array (recurse per sub-mode matching the shape tree).
+     ══════════════════════════════════════════════════════════════════════ */
+
+  function matchesSlice(flatCoord, shape, coord) {
+    if (coord === '_') return true;
+
+    if (!Array.isArray(coord)) {
+      // Scalar coord: match the flat coordinate directly
+      return flatCoord === coord;
+    }
+
+    // Tuple coord: must recursively match each sub-mode
+    if (!Array.isArray(shape) || coord.length !== shape.length) return false;
+
+    var rem = flatCoord;
+    for (var i = 0; i < shape.length; i++) {
+      var sz  = product(shape[i]);
+      var sub = rem % sz;
+      rem = Math.floor(rem / sz);
+      if (!matchesSlice(sub, shape[i], coord[i])) return false;
+    }
+    return true;
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     SEPARATOR COMPUTATION
+     ══════════════════════════════════════════════════════════════════════ */
+
+  function collectBoundaries(shape, offset, out) {
+    if (!Array.isArray(shape) || shape.length < 2) return;
+    var total     = product(shape);
+    var innerSize = 1;
+    for (var i = 0; i < shape.length - 1; i++) {
+      innerSize *= product(shape[i]);
+      for (var j = innerSize; j < total; j += innerSize)
+        out.push({ pos: offset + j, period: innerSize });
+    }
+    if (Array.isArray(shape[0])) {
+      var subSize = product(shape[0]);
+      for (var r = 0; r < total / subSize; r++)
+        collectBoundaries(shape[0], offset + r * subSize, out);
+    }
+  }
+
+  function getSeparators(shape) {
+    var raw = [];
+    collectBoundaries(shape, 0, raw);
+    if (!raw.length) return new Map();
+
+    var periodSet = {};
+    raw.forEach(function (b) { periodSet[b.period] = true; });
+    var periods = Object.keys(periodSet).map(Number).sort(function (a, b) { return a - b; });
+    var pLevel  = {};
+    periods.forEach(function (p, i) { pLevel[p] = i; });
+
+    var seps = new Map();
+    raw.forEach(function (b) {
+      var lv  = pLevel[b.period];
+      var cur = seps.has(b.pos) ? seps.get(b.pos) : -1;
+      seps.set(b.pos, Math.max(cur, lv));
+    });
+    return seps;
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     DISPLAY HELPERS
+     ══════════════════════════════════════════════════════════════════════ */
+
+  function tupleStr(t) {
+    if (!Array.isArray(t)) return String(t);
+    return '(' + t.map(tupleStr).join(',') + ')';
+  }
+
+  function makeTh(text, cls) {
+    var el = document.createElement('th');
+    if (text !== undefined) el.textContent = String(text);
+    if (cls) el.className = cls;
+    return el;
+  }
+
+  function makeTd(idx) {
+    var el = document.createElement('td');
+    el.textContent = idx;
+    var c = ((idx % 8) + 8) % 8;
+    el.style.backgroundColor = BG[c];
+    el.style.color            = FG[c];
+    return el;
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     PUBLIC API
+     ══════════════════════════════════════════════════════════════════════ */
+
+  window.clvSet = function (layoutStr, btn) {
+    document.getElementById('clv-layout').value = layoutStr;
+    document.querySelectorAll('.clv-preset-btn').forEach(function (b) {
+      b.classList.remove('active');
+    });
+    if (btn) btn.classList.add('active');
+    clvRender();
+  };
+
+  window.clvClearSlice = function () {
+    document.getElementById('clv-slice').value = '';
+    clvRender();
+  };
+
+  window.clvRender = function () {
+    var errEl     = document.getElementById('clv-error');
+    var infoEl    = document.getElementById('clv-info');
+    var gridEl    = document.getElementById('clv-grid');
+    var legendEl  = document.getElementById('clv-legend');
+    var sliceErrEl = document.getElementById('clv-slice-err');
+
+    errEl.style.display     = 'none';
+    infoEl.style.display    = 'none';
+    gridEl.innerHTML        = '';
+    gridEl.className        = 'clv-grid';
+    legendEl.style.display  = 'none';
+    sliceErrEl.style.display = 'none';
+
+    function fail(msg) { errEl.textContent = msg; errEl.style.display = 'block'; }
+
+    /* ── Parse layout ── */
+    var parsed;
+    try { parsed = parseLayout(document.getElementById('clv-layout').value); }
+    catch (e) { return fail('Parse error: ' + e.message); }
+
+    var shape  = parsed.shape;
+    var stride = parsed.stride;
+
+    if (!sameTree(shape, stride))
+      return fail('Shape and stride must have the same nested structure.');
+
+    /* Determine rank */
+    var rank;
+    var m0Shape, m0Stride, m1Shape, m1Stride;
+
+    if (!Array.isArray(shape)) {
+      rank = 1;
+      m0Shape = shape;  m0Stride = stride;
+      m1Shape = 1;      m1Stride = 0;
+    } else if (shape.length === 1) {
+      rank = 1;
+      m0Shape = shape[0];  m0Stride = stride[0];
+      m1Shape = 1;         m1Stride = 0;
+    } else if (shape.length === 2) {
+      rank = 2;
+      m0Shape = shape[0];  m0Stride = stride[0];
+      m1Shape = shape[1];  m1Stride = stride[1];
+    } else {
+      return fail('Only 1 or 2 top-level modes are supported (got ' + shape.length + ').');
+    }
+
+    if (!shapesPositive(m0Shape) || !shapesPositive(m1Shape))
+      return fail('All shape values must be ≥ 1.');
+
+    var M    = product(m0Shape);
+    var N    = rank === 2 ? product(m1Shape) : 1;
+    var is1D = (rank === 1);
+
+    if (M * N > 2048)
+      return fail('Layout size ' + (M * N) + ' exceeds display limit of 2048 cells.');
+
+    /* ── Parse slice (optional) ── */
+    var sliceM = '_', sliceN = '_', hasSlice = false;
+    var sliceRaw = document.getElementById('clv-slice').value.trim();
+
+    if (sliceRaw) {
+      try {
+        var sliceCoord = parseCoord(sliceRaw);
+
+        if (is1D) {
+          // 1-D: accept scalar/underscore/1-element tuple
+          if (Array.isArray(sliceCoord)) {
+            if (sliceCoord.length === 1) sliceCoord = sliceCoord[0];
+            else throw new Error('1-D layout expects a single coordinate, e.g. _ or 3');
+          }
+          sliceM = sliceCoord;
+          sliceN = '_';
+        } else {
+          // 2-D: expect 2-element top-level tuple
+          if (!Array.isArray(sliceCoord) || sliceCoord.length !== 2)
+            throw new Error('2-D layout expects a 2-element coordinate, e.g. (_,2) or (3,_)');
+          sliceM = sliceCoord[0];
+          sliceN = sliceCoord[1];
+        }
+
+        hasSlice = !(sliceM === '_' && sliceN === '_');
+      } catch (e) {
+        sliceErrEl.textContent   = 'Slice — ' + e.message;
+        sliceErrEl.style.display = 'block';
+        // Continue rendering without slice
+      }
+    }
+
+    /* ── Info banner ── */
+    var layoutStr = tupleStr(shape) + ':' + tupleStr(stride);
+    var totalCells = M * N;
+    var infoHtml =
+      'Layout:&nbsp;<code>' + layoutStr + '</code>' +
+      '&nbsp;&nbsp;·&nbsp;&nbsp;' +
+      'Size:&nbsp;<code>' + totalCells + '</code>';
+
+    if (hasSlice) {
+      // Count matched cells for the info banner
+      var matchCount = 0;
+      for (var mc = 0; mc < M; mc++)
+        for (var nc = 0; nc < N; nc++)
+          if (matchesSlice(mc, m0Shape, sliceM) && matchesSlice(nc, m1Shape, sliceN))
+            matchCount++;
+      infoHtml +=
+        '&nbsp;&nbsp;·&nbsp;&nbsp;' +
+        'Slice:&nbsp;<code>' + sliceRaw + '</code>' +
+        '&nbsp;&nbsp;→&nbsp;&nbsp;<code>' + matchCount + '</code>&nbsp;cell' +
+        (matchCount !== 1 ? 's' : '') + ' selected';
+    }
+
+    infoEl.innerHTML     = infoHtml;
+    infoEl.style.display = 'block';
+
+    /* ── Adaptive cell size ── */
+    var maxDim  = Math.max(M, is1D ? 1 : N);
+    var szClass = maxDim <= 8  ? 'clv-sz-sm'
+                : maxDim <= 16 ? 'clv-sz-md'
+                : maxDim <= 32 ? 'clv-sz-lg'
+                :                'clv-sz-xl';
+    gridEl.classList.add(szClass);
+
+    /* ── Separators ── */
+    var rowSeps = getSeparators(m0Shape);
+    var colSeps = getSeparators(m1Shape);
+    var hasSeps = rowSeps.size > 0 || colSeps.size > 0;
+
+    /* Pre-compute per-row and per-col slice matches (for header highlighting) */
+    var rowMatched = [], colMatched = [];
+    if (hasSlice) {
+      for (var m2 = 0; m2 < M; m2++)
+        rowMatched[m2] = matchesSlice(m2, m0Shape, sliceM);
+      for (var n2 = 0; n2 < N; n2++)
+        colMatched[n2] = matchesSlice(n2, m1Shape, sliceN);
+    }
+
+    /* ── Build table ── */
+    var frag = document.createDocumentFragment();
+
+    if (!is1D) {
+      var hrow = document.createElement('tr');
+      hrow.appendChild(makeTh('', 'clv-corner'));
+      for (var n = 0; n < N; n++) {
+        var hth = makeTh(n);
+        if (colSeps.has(n)) hth.style.borderLeft = sepStyle(colSeps.get(n));
+        if (hasSlice && colMatched[n]) hth.className = 'clv-hi-hdr';
+        hrow.appendChild(hth);
+      }
+      frag.appendChild(hrow);
+    }
+
+    for (var m = 0; m < M; m++) {
+      var row = document.createElement('tr');
+
+      if (!is1D) {
+        var lth = makeTh(m);
+        if (rowSeps.has(m))  lth.style.borderTop = sepStyle(rowSeps.get(m));
+        if (hasSlice && rowMatched[m]) lth.className = 'clv-hi-hdr';
+        row.appendChild(lth);
+      }
+
+      for (var nn = 0; nn < N; nn++) {
+        var idx = modeIdx(m, m0Shape, m0Stride) + modeIdx(nn, m1Shape, m1Stride);
+        var td  = makeTd(idx);
+
+        /* Separator borders */
+        if (rowSeps.has(m))  td.style.borderTop  = sepStyle(rowSeps.get(m));
+        if (colSeps.has(nn)) td.style.borderLeft  = sepStyle(colSeps.get(nn));
+
+        /* Slice highlighting */
+        if (hasSlice) {
+          if (rowMatched[m] && colMatched[nn]) {
+            td.classList.add('clv-hi');
+          } else {
+            td.classList.add('clv-dim');
+          }
+        }
+
+        row.appendChild(td);
+      }
+      frag.appendChild(row);
+    }
+
+    gridEl.appendChild(frag);
+    if (hasSeps) legendEl.style.display = 'flex';
+  };
+
+  /* ── Keyboard shortcuts ── */
+  document.getElementById('clv-layout').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') clvRender();
+  });
+  document.getElementById('clv-slice').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') clvRender();
+  });
+
+  /* ── Auto-render on load ── */
+  if (document.readyState === 'loading')
+    document.addEventListener('DOMContentLoaded', clvRender);
+  else
+    clvRender();
+}());
+</script>
