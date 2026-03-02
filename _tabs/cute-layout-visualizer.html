@@ -322,7 +322,7 @@ table.clv-grid th.clv-hi-hdr { color: #2c7bb6; font-weight: 800; }
     return parts.filter(function (s) { return s.length > 0; });
   }
 
-  // Parse integers / nested tuples (for shape & stride – no wildcards)
+  /* Parse integers / nested tuples (for shape & stride – no wildcards) */
   function parseTuple(str) {
     str = str.trim();
     if (!str) throw new Error('empty value');
@@ -337,7 +337,7 @@ table.clv-grid th.clv-hi-hdr { color: #2c7bb6; font-weight: 800; }
     return v;
   }
 
-  // Parse a coordinate: integer, "_" wildcard, or nested tuple of coords
+  /* Parse a coordinate: integer, "_" wildcard, or nested tuple of coords */
   function parseCoord(str) {
     str = str.trim();
     if (!str || str === '_') return '_';
@@ -352,7 +352,7 @@ table.clv-grid th.clv-hi-hdr { color: #2c7bb6; font-weight: 800; }
     return v;
   }
 
-  // Parse layout string "shape:stride"
+  /* Parse layout string "shape:stride" */
   function parseLayout(str) {
     str = str.trim();
     var depth = 0, colon = -1;
@@ -393,7 +393,7 @@ table.clv-grid th.clv-hi-hdr { color: #2c7bb6; font-weight: 800; }
     return s.every(shapesPositive);
   }
 
-  // Map flat coordinate `coord` in mode (shape,stride) to its index contribution
+  /* Map flat coordinate `coord` in mode (shape,stride) to its index contribution */
   function modeIdx(coord, shape, stride) {
     if (!Array.isArray(shape)) return coord * stride;
     var idx = 0, rem = coord;
@@ -415,11 +415,11 @@ table.clv-grid th.clv-hi-hdr { color: #2c7bb6; font-weight: 800; }
     if (coord === '_') return true;
 
     if (!Array.isArray(coord)) {
-      // Scalar coord: match the flat coordinate directly
+      /* Scalar coord: match the flat coordinate directly */
       return flatCoord === coord;
     }
 
-    // Tuple coord: must recursively match each sub-mode
+    /* Tuple coord: must recursively match each sub-mode */
     if (!Array.isArray(shape) || coord.length !== shape.length) return false;
 
     var rem = flatCoord;
@@ -581,7 +581,7 @@ table.clv-grid th.clv-hi-hdr { color: #2c7bb6; font-weight: 800; }
         var sliceCoord = parseCoord(sliceRaw);
 
         if (is1D) {
-          // 1-D: accept scalar/underscore/1-element tuple
+          /* 1-D: accept scalar/underscore/1-element tuple */
           if (Array.isArray(sliceCoord)) {
             if (sliceCoord.length === 1) sliceCoord = sliceCoord[0];
             else throw new Error('1-D layout expects a single coordinate, e.g. _ or 3');
@@ -589,7 +589,7 @@ table.clv-grid th.clv-hi-hdr { color: #2c7bb6; font-weight: 800; }
           sliceM = sliceCoord;
           sliceN = '_';
         } else {
-          // 2-D: expect 2-element top-level tuple
+          /* 2-D: expect 2-element top-level tuple */
           if (!Array.isArray(sliceCoord) || sliceCoord.length !== 2)
             throw new Error('2-D layout expects a 2-element coordinate, e.g. (_,2) or (3,_)');
           sliceM = sliceCoord[0];
@@ -600,7 +600,7 @@ table.clv-grid th.clv-hi-hdr { color: #2c7bb6; font-weight: 800; }
       } catch (e) {
         sliceErrEl.textContent   = 'Slice — ' + e.message;
         sliceErrEl.style.display = 'block';
-        // Continue rendering without slice
+        /* Continue rendering without slice */
       }
     }
 
@@ -613,7 +613,7 @@ table.clv-grid th.clv-hi-hdr { color: #2c7bb6; font-weight: 800; }
       'Size:&nbsp;<code>' + totalCells + '</code>';
 
     if (hasSlice) {
-      // Count matched cells for the info banner
+      /* Count matched cells for the info banner */
       var matchCount = 0;
       for (var mc = 0; mc < M; mc++)
         for (var nc = 0; nc < N; nc++)
